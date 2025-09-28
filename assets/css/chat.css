@@ -1,0 +1,113 @@
+/* Dark theme chat styles */
+:root {
+  --chat-bg: #111418;
+  --chat-panel: #1a1f24;
+  --chat-panel-2: #232a31;
+  --chat-border: #2b333b;
+  --chat-muted: #8a9aa9;
+  --chat-text: #e8eef5;
+  --chat-accent: #3f51b5; /* matches existing theme */
+  --chat-danger: #e57373;
+  --chat-success: #81c784;
+}
+
+.chat-launch-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1050;
+  background: var(--chat-accent);
+  color: #fff;
+  border: none;
+  border-radius: 28px;
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.chat-modal .modal-content {
+  background: var(--chat-panel);
+  color: var(--chat-text);
+  border: 1px solid var(--chat-border);
+}
+
+.chat-modal .modal-header,
+.chat-modal .modal-footer {
+  background: var(--chat-panel-2);
+  border-color: var(--chat-border);
+}
+
+.chat-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.presence-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6b7280;
+  display: inline-block;
+}
+
+.presence-dot.online { background: #22c55e; }
+.presence-dot.away { background: #f59e0b; }
+
+.chat-messages {
+  height: 380px;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--chat-bg);
+  border: 1px solid var(--chat-border);
+  border-radius: 10px;
+}
+
+.chat-message {
+  max-width: 75%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  line-height: 1.35;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.chat-message.me {
+  margin-left: auto;
+  background: #283143;
+  border: 1px solid #2f3a4f;
+}
+
+.chat-message.other {
+  margin-right: auto;
+  background: #222a33;
+  border: 1px solid #2a3440;
+}
+
+.chat-message .meta {
+  display: block;
+  font-size: 12px;
+  color: var(--chat-muted);
+  margin-top: 6px;
+}
+
+.chat-input {
+  background: var(--chat-panel-2);
+  border: 1px solid var(--chat-border);
+  color: var(--chat-text);
+}
+
+.chat-input::placeholder { color: #9aa8b5; }
+
+.btn-send {
+  background: var(--chat-accent);
+  border: none;
+}
+
+.btn-send:disabled { opacity: 0.6; }
+
+.typing-indicator {
+  height: 18px;
+  color: var(--chat-muted);
+  font-size: 13px;
+}

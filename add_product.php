@@ -1,0 +1,181 @@
+<?php
+require_once 'config.php';
+requireRole('seller');
+
+$page_title = 'Add Product';
+$error = '';
+$success = '';
+
+// Get categories
+$stmt = $pdo->query("SELECT name FROM categories ORDER BY name");
+$categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $title = sanitizeInput($_POST['title']);
+    $description = sanitizeInput($_POST['description']);
+    $price = floatval($_POST['price']);
+    $category = sanitizeInput($_POST['category']);
+    
+    // Validation
+    if (empty($title) || empty($description) || $price <= 0) {
+        $error = 'Please fill all required fields with valid data.';
+    } elseif (strlen($title) < 3) {
+        $error = 'Product title must be at least 3 characters long.';
+    } elseif (strlen($description) < 10) {
+        $error = 'Product description must be at least 10 characters long.';
+    } elseif ($price > 1000000) {
+        $error = 'Product price cannot exceed ₹10,00,000.';
+    } else {
+        $image_name = null;
+        
+        // Handle image upload
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $file_type = $_FILES['image']['type'];
+            $file_size = $_FILES['image']['size'];
+            
+            if (!in_array($file_type, $allowed_types)) {
+                $error = 'Invalid image type. Please upload JPEG, PNG, GIF, or WebP images only.';
+            } elseif ($file_size > 5 * 1024 * 1024) { // 5MB limit
+                $error = 'Image size must be less than 5MB.';
+            } else {
+                // Create uploads directory if it doesn't exist
+                $upload_dir = 'assets/img/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0755, true);
+                }
+                
+                // Generate unique filename
+                $file_extension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+                $image_name = 'product_' . uniqid() . '.' . $file_extension;
+                $upload_path = $upload_dir . $image_name;
+                
+                if (!move_uploaded_file($_FILES['image']['tmp_name'], $upload_path)) {
+                    $error = 'Failed to upload image. Please try again.';
+                    $image_name = null;
+                }
+            }
+        }
+        
+        if (empty($error)) {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO products (seller_id, title, description, price, category, image, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
+                $stmt->execute([$_SESSION['user_id'], $title, $description, $price, $category, $image_name]);
+                
+                $success = 'Product added successfully! It will be visible after admin approval.';
+                
+                // Clear form data
+                $_POST = [];
+            } catch (PDOException $e) {
+                $error = 'Failed to add product. Please try again.';
+                
+                // Delete uploaded image if database insert failed
+                if ($image_name && file_exists($upload_dir . $image_name)) {
+                    unlink($upload_dir . $image_name);
+                }
+            }
+        }
+    }
+}
+
+include 'includes/header.php';
+?>
+
+<div class="container my-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-plus text-primary"></i> Add New Product</h4>
+                    <p class="mb-0 text-muted">List your product for sale on Retrade marketplace</p>
+                </div>
+                <div class="card-body">
+                    <?php if ($error): ?>
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($success): ?>
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i> <?php echo $success; ?>
+                            <div class="mt-2">
+                                <a href="dashboard.php" class="btn btn-success btn-sm me-2">View Dashboard</a>
+                                <a href="add_product.php" class="btn btn-primary btn-sm">Add Another Product</a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <form method="POST" enctype="multipart/form-data" class="needs-validation" novalidate>
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="title" class="form-label">Product Title *</label>
+                                <input type="text" class="form-control" id="title" name="title" 
+                                       value="<?php echo htmlspecialchars($_POST['title'] ?? ''); ?>" 
+                                       placeholder="Enter product title" required>
+                                <div class="invalid-feedback">Please provide a product title.</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="price" class="form-label">Price (₹) *</label>
+                                <input type="number" class="form-control" id="price" name="price" 
+                                       value="<?php echo htmlspecialchars($_POST['price'] ?? ''); ?>" 
+                                       placeholder="0.00" step="0.01" min="1" max="1000000" required>
+                                <div class="invalid-feedback">Please provide a valid price.</div>
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="category" class="form-label">Category</label>
+                                <select class="form-select" id="category" name="category">
+                                    <option value="">Select category (optional)</option>
+                                    <?php foreach ($categories as $cat): ?>
+                                        <option value="<?php echo htmlspecialchars($cat); ?>" 
+                                                <?php echo ($_POST['category'] ?? '') === $cat ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($cat); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description *</label>
+                            <textarea class="form-control" id="description" name="description" rows="4" 
+                                      placeholder="Describe your product in detail..." required><?php echo htmlspecialchars($_POST['description'] ?? ''); ?></textarea>
+                            <div class="invalid-feedback">Please provide a product description.</div>
+                            <div class="form-text">Minimum 10 characters required</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="image" class="form-label">Product Image</label>
+                            <input type="file" class="form-control" id="image" name="image" 
+                                   accept="image/jpeg,image/png,image/gif,image/webp">
+                            <div class="form-text">
+                                Optional. Supported formats: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Note:</strong> Your product will be reviewed by our admin team before it becomes visible to buyers. 
+                            This usually takes 24-48 hours.
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="dashboard.php" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Dashboard
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Add Product
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php include 'includes/footer.php'; ?>
