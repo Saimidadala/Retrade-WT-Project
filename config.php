@@ -4,6 +4,7 @@ define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'retrade_db');
+define('PEXELS_API_KEY', 'yzCDMU4dIp1bLxi3i97HsIMptIbEA5vDnzqsW9jVcyWAejxVkndAuoCK');
 
 // Create database connection
 try {
@@ -42,6 +43,15 @@ if (!defined('WS_SERVER_URL')) {
 }
 if (!defined('WS_SHARED_SECRET')) {
     define('WS_SHARED_SECRET', 'change_this_ws_secret');
+}
+
+// External photo provider API keys (optional)
+// Prefer setting via environment variables PEXELS_API_KEY / UNSPLASH_ACCESS_KEY
+if (!defined('PEXELS_API_KEY')) {
+    define('PEXELS_API_KEY', getenv('PEXELS_API_KEY') ?: '');
+}
+if (!defined('UNSPLASH_ACCESS_KEY')) {
+    define('UNSPLASH_ACCESS_KEY', getenv('UNSPLASH_ACCESS_KEY') ?: '');
 }
 
 // Helper functions

@@ -15,6 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $description = sanitizeInput($_POST['description']);
     $price = floatval($_POST['price']);
     $category = sanitizeInput($_POST['category']);
+    $condition_grade = sanitizeInput($_POST['condition_grade'] ?? '');
+    $condition_notes = trim($_POST['condition_notes'] ?? '');
     
     // Validation
     if (empty($title) || empty($description) || $price <= 0) {
@@ -25,11 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Product description must be at least 10 characters long.';
     } elseif ($price > 1000000) {
         $error = 'Product price cannot exceed ₹10,00,000.';
+    } elseif (!in_array($condition_grade, ['New','Like New','Excellent','Good','Fair','Poor'])) {
+        $error = 'Please select a valid product condition.';
     } else {
         $image_name = null;
+        $defect_photos = [];
         
-        // Handle image upload
-        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        // Require main image upload
+        if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+            $error = 'Product image is required.';
+        } elseif (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
             $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
             $file_type = $_FILES['image']['type'];
             $file_size = $_FILES['image']['size'];
@@ -51,26 +58,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $upload_path = $upload_dir . $image_name;
                 
                 if (!move_uploaded_file($_FILES['image']['tmp_name'], $upload_path)) {
-                    $error = 'Failed to upload image. Please try again.';
                     $image_name = null;
+                    $error = 'Failed to upload image. Please try again.';
                 }
             }
         }
-        
+
+        // Handle defect photos multi-upload (optional)
+        $defect_photos = [];
+        if (isset($_FILES['defect_photos']) && is_array($_FILES['defect_photos']['name'])) {
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $upload_dir_def = 'assets/img/defects/';
+            if (!is_dir($upload_dir_def)) { mkdir($upload_dir_def, 0755, true); }
+            $count = count($_FILES['defect_photos']['name']);
+            for ($i = 0; $i < $count; $i++) {
+                if (($_FILES['defect_photos']['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) { continue; }
+                $file_type = $_FILES['defect_photos']['type'][$i] ?? '';
+                $file_size = $_FILES['defect_photos']['size'][$i] ?? 0;
+                if (!in_array($file_type, $allowed_types) || $file_size > 5 * 1024 * 1024) { continue; }
+                $ext = pathinfo($_FILES['defect_photos']['name'][$i], PATHINFO_EXTENSION);
+                $fname = 'defect_' . uniqid() . '.' . $ext;
+                if (move_uploaded_file($_FILES['defect_photos']['tmp_name'][$i], $upload_dir_def . $fname)) {
+                    $defect_photos[] = 'defects/' . $fname;
+                }
+            }
+        }
+
+        // Finalize insert if no errors
         if (empty($error)) {
             try {
-                $stmt = $pdo->prepare("INSERT INTO products (seller_id, title, description, price, category, image, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
-                $stmt->execute([$_SESSION['user_id'], $title, $description, $price, $category, $image_name]);
-                
+                $stmt = $pdo->prepare("INSERT INTO products (seller_id, title, description, price, category, image, status, condition_grade, condition_notes, defect_photos) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)");
+                $stmt->execute([
+                    $_SESSION['user_id'],
+                    $title,
+                    $description,
+                    $price,
+                    $category,
+                    $image_name,
+                    $condition_grade,
+                    $condition_notes ?: null,
+                    empty($defect_photos) ? null : implode(',', $defect_photos)
+                ]);
                 $success = 'Product added successfully! It will be visible after admin approval.';
-                
-                // Clear form data
                 $_POST = [];
             } catch (PDOException $e) {
                 $error = 'Failed to add product. Please try again.';
-                
-                // Delete uploaded image if database insert failed
-                if ($image_name && file_exists($upload_dir . $image_name)) {
+                if (isset($upload_dir) && $image_name && file_exists($upload_dir . $image_name)) {
                     unlink($upload_dir . $image_name);
                 }
             }
@@ -140,6 +173,28 @@ include 'includes/header.php';
                             </div>
                         </div>
                         
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="condition_grade" class="form-label">Product Condition *</label>
+                                <select id="condition_grade" name="condition_grade" class="form-select" required>
+                                    <?php $grades = ['New','Like New','Excellent','Good','Fair','Poor']; $sel = $_POST['condition_grade'] ?? 'Good'; foreach ($grades as $g): ?>
+                                        <option value="<?php echo $g; ?>" <?php echo $sel === $g ? 'selected' : ''; ?>><?php echo $g; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">New: unopened · Like New: no marks · Excellent: hairline marks · Good: visible wear · Fair: noticeable wear · Poor: heavy wear/defect disclosed.</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="defect_photos" class="form-label">Defect / Close-up Photos (optional)</label>
+                                <input type="file" id="defect_photos" name="defect_photos[]" class="form-control" multiple accept="image/jpeg,image/png,image/gif,image/webp">
+                                <div class="form-text">Add close-ups of scratches, dents, or issues. Max 5MB each.</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="condition_notes" class="form-label">Condition Notes (optional)</label>
+                            <textarea id="condition_notes" name="condition_notes" class="form-control" rows="3" placeholder="e.g., Minor scratch on back; battery ~90%; original box included."><?php echo htmlspecialchars($_POST['condition_notes'] ?? ''); ?></textarea>
+                        </div>
+
                         <div class="mb-3">
                             <label for="description" class="form-label">Description *</label>
                             <textarea class="form-control" id="description" name="description" rows="4" 
@@ -149,11 +204,12 @@ include 'includes/header.php';
                         </div>
                         
                         <div class="mb-3">
-                            <label for="image" class="form-label">Product Image</label>
+                            <label for="image" class="form-label">Product Image *</label>
                             <input type="file" class="form-control" id="image" name="image" 
-                                   accept="image/jpeg,image/png,image/gif,image/webp">
+                                   accept="image/jpeg,image/png,image/gif,image/webp" required>
+                            <div class="invalid-feedback">Please upload a product image.</div>
                             <div class="form-text">
-                                Optional. Supported formats: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
+                                Required. Supported formats: JPEG, PNG, GIF, WebP. Maximum size: 5MB.
                             </div>
                         </div>
                         

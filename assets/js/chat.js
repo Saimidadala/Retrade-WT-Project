@@ -29,6 +29,10 @@
   const sendBtn = document.getElementById('sendMsgBtn');
   const presenceDot = document.getElementById('chatPresence');
   const typingIndicator = document.getElementById('typingIndicator');
+  const presenceText = document.getElementById('chatPresenceText');
+  const productTitleEl = document.getElementById('chatProductTitle');
+  const attachBtn = document.getElementById('attachBtn');
+  const attachInput = document.getElementById('chatAttachment');
 
   const bsModal = new bootstrap.Modal(chatModalEl);
 
@@ -36,17 +40,20 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
-  function appendMessage({ me, name, text, ts }){
+  function appendMessage({ me, name, text, ts, tempId }){
     const bubble = document.createElement('div');
     bubble.className = 'chat-message ' + (me ? 'me' : 'other');
-    bubble.innerHTML = `<div>${escapeHtml(text)}</div><span class="meta">${me ? 'You' : escapeHtml(name)} • ${formatTime(ts)}</span>`;
+    if (tempId) bubble.dataset.tempId = String(tempId);
+    bubble.innerHTML = `<div>${escapeHtml(text)}</div><span class="meta">${me ? 'You' : escapeHtml(name)} • ${formatTime(ts)}${tempId ? ' • sending…' : ''}</span>`;
     chatMessages.appendChild(bubble);
     scrollToBottom();
+    return bubble;
   }
 
   function setPresence(online){
     if (!presenceDot) return;
     presenceDot.classList.toggle('online', !!online);
+    if (presenceText) presenceText.textContent = online ? 'Online' : 'Offline';
   }
 
   function setTyping(show){
@@ -79,9 +86,47 @@
       joinedRoom = payload.room;
     });
 
+  // Attachment handling
+  if (attachBtn && attachInput) {
+    attachBtn.addEventListener('click', function(){ attachInput.click(); });
+    attachInput.addEventListener('change', async function(){
+      try {
+        const file = attachInput.files && attachInput.files[0];
+        if (!file) return;
+        if (!window.__negotiationId || !window.__currentUser) return;
+        // show pending bubble
+        const caption = file.name;
+        const pending = appendMessage({ me: true, name: 'You', text: '[Uploading] ' + caption, ts: Date.now(), tempId: 'att' + Date.now() });
+        const form = new FormData();
+        form.append('negotiation_id', String(window.__negotiationId));
+        form.append('sender_id', String(window.__currentUser.id));
+        form.append('message', '');
+        form.append('attachment', file);
+        const res = await fetch('api/chat_message_save.php', { method: 'POST', body: form, credentials: 'same-origin' });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+        // remove pending (will be replaced by WS echo), and refresh header
+        if (pending) pending.remove();
+        window.refreshMessages && window.refreshMessages();
+      } catch(err) {
+        alert(err.message || 'Attachment error');
+      } finally {
+        attachInput.value = '';
+      }
+    });
+  }
+
     socket.on('message', (msg)=>{
       // msg: { userId, name, text, ts }
-      appendMessage({ me: (msg.userId === user.id), name: msg.name, text: msg.text, ts: msg.ts });
+      const isMe = (msg.userId === user.id);
+      // If there is a pending bubble that matches my text, remove it
+      if (isMe) {
+        const pending = chatMessages.querySelector('.chat-message.me[data-temp-id]');
+        if (pending) pending.remove();
+      }
+      appendMessage({ me: isMe, name: msg.name, text: msg.text, ts: msg.ts });
+      // Update header badges in real-time
+      window.refreshMessages && window.refreshMessages();
     });
 
     socket.on('typing', ({ userId, typing, name })=>{
@@ -98,6 +143,9 @@
       alert('Message too long (max 1000 characters).');
       return;
     }
+    // Add a temporary pending bubble
+    const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const pendingBubble = appendMessage({ me: true, name: 'You', text, ts: Date.now(), tempId });
     socket.emit('message', { room: joinedRoom, text });
     // Save message
     try {
@@ -106,10 +154,22 @@
         form.append('negotiation_id', String(window.__negotiationId));
         form.append('sender_id', String(window.__currentUser.id));
         form.append('message', text);
-        await fetch('api/chat_message_save.php', { method: 'POST', body: form, credentials: 'same-origin' });
+        const res = await fetch('api/chat_message_save.php', { method: 'POST', body: form, credentials: 'same-origin' });
+        // If success, header can refresh sooner
+        if (res.ok) { window.refreshMessages && window.refreshMessages(); }
       }
     } catch(e){}
     chatInput.value = '';
+    // Fallback: if no confirmation arrives, mark failed after 6s
+    setTimeout(()=>{
+      if (pendingBubble && document.body.contains(pendingBubble)) {
+        const meta = pendingBubble.querySelector('.meta');
+        if (meta && meta.textContent && meta.textContent.includes('sending…')) {
+          meta.textContent = meta.textContent.replace('sending…', 'failed');
+          pendingBubble.classList.add('opacity-75');
+        }
+      }
+    }, 6000);
   }
 
   function notifyTyping(){
@@ -128,7 +188,10 @@
       const buyerId = btn.getAttribute('data-buyer-id');
       const sellerId = btn.getAttribute('data-seller-id');
       const role = btn.getAttribute('data-role') || 'buyer';
+      const pTitle = btn.getAttribute('data-product-title') || '';
       console.debug('Chat: openChatFromButton click', { role, productId, buyerId, sellerId });
+      // Update header subtitle if present
+      if (productTitleEl) productTitleEl.textContent = pTitle ? ('for: ' + pTitle) : '';
       bsModal.show();
       setPresence(false);
       setTyping(false);
@@ -180,6 +243,13 @@
               appendMessage({ me: (m.sender_id === user.id), name: m.sender_name || 'User', text: m.message, ts: m.created_at });
             });
             console.debug('Chat: history loaded', { count: data.messages.length });
+            // Mark as read for this negotiation
+            try {
+              const form = new FormData();
+              form.append('negotiation_id', String(window.__negotiationId));
+              await fetch('api/messages_mark_read.php', { method: 'POST', body: form, credentials: 'same-origin' });
+              window.refreshMessages && window.refreshMessages();
+            } catch(_){ }
           }
         }
       } catch(e){}

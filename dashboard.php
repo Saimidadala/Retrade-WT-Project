@@ -34,6 +34,7 @@ include 'includes/header.php';
                 </div>
             </div>
         </div>
+
     </div>
 
     <?php if ($user_role === 'buyer'): ?>
@@ -64,6 +65,28 @@ include 'includes/header.php';
         ");
         $stmt->execute([$user_id]);
         $purchases = $stmt->fetchAll();
+
+        // Ensure wishlist table exists then fetch wishlist items
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wishlist (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          buyer_id INT NOT NULL,
+          product_id INT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_buyer_product (buyer_id, product_id),
+          FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+        $wq = $pdo->prepare("
+            SELECT w.id as wid, p.*, u.name AS seller_name
+            FROM wishlist w
+            JOIN products p ON w.product_id = p.id
+            JOIN users u ON p.seller_id = u.id
+            WHERE w.buyer_id = ?
+            ORDER BY w.created_at DESC
+        ");
+        $wq->execute([$user_id]);
+        $wishlist = $wq->fetchAll();
         ?>
 
         <!-- Buyer Stats -->
@@ -238,225 +261,178 @@ include 'includes/header.php';
         $negotiations = $negStmt->fetchAll();
         ?>
 
-        <!-- Seller Stats -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card dashboard-card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-box fa-2x text-primary mb-2"></i>
-                        <h4><?php echo $seller_stats['total_products']; ?></h4>
-                        <small class="text-muted">Total Products</small>
-                    </div>
-                </div>
+        <div class="row g-4">
+          <!-- Left: Negotiations + Products -->
+          <div class="col-lg-8">
+            <div class="card mb-4">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-comments me-2"></i>Negotiations</h5>
+              </div>
+              <div class="card-body">
+                <?php if (empty($negotiations)): ?>
+                  <div class="text-center py-4">
+                    <i class="fas fa-comments fa-3x text-muted mb-3"></i>
+                    <h5>No active negotiations yet</h5>
+                    <p class="text-muted mb-0">When buyers initiate chats on your product pages, they will appear here.</p>
+                  </div>
+                <?php else: ?>
+                  <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>Buyer</th>
+                          <th>Last Message</th>
+                          <th>Updated</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php foreach ($negotiations as $neg): ?>
+                          <tr>
+                            <td><?php echo htmlspecialchars($neg['product_title']); ?></td>
+                            <td><?php echo htmlspecialchars($neg['buyer_name']); ?></td>
+                            <td class="text-truncate" style="max-width: 320px;">
+                              <?php echo htmlspecialchars($neg['last_message'] ?? ''); ?>
+                            </td>
+                            <td>
+                              <small class="text-muted"><?php echo $neg['last_time'] ? date('M j, Y H:i', strtotime($neg['last_time'])) : '-'; ?></small>
+                            </td>
+                            <td class="text-end">
+                              <button class="btn btn-sm btn-outline-gold openChatBtn"
+                                      data-role="seller"
+                                      data-product-id="<?php echo (int)$neg['product_id']; ?>"
+                                      data-seller-id="<?php echo (int)$user_id; ?>"
+                                      data-buyer-id="<?php echo (int)$neg['buyer_id']; ?>">
+                                <i class="fas fa-comments"></i> Open Chat
+                              </button>
+                            </td>
+                          </tr>
+                        <?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                <?php endif; ?>
+              </div>
             </div>
-            <div class="col-md-3">
-                <div class="card dashboard-card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
-                        <h4><?php echo $seller_stats['approved_products']; ?></h4>
-                        <small class="text-muted">Approved Products</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card dashboard-card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-handshake fa-2x text-info mb-2"></i>
-                        <h4><?php echo $sales_stats['total_sales']; ?></h4>
-                        <small class="text-muted">Total Sales</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card dashboard-card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-rupee-sign fa-2x text-success mb-2"></i>
-                        <h4><?php echo formatPrice($sales_stats['released_earnings'] ?? 0); ?></h4>
-                        <small class="text-muted">Released Earnings</small>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Quick Actions -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <h5><i class="fas fa-bolt"></i> Quick Actions</h5>
-                        <div class="row">
-                            <div class="col-md-4">
-                                <a href="add_product.php" class="btn btn-primary w-100 mb-2">
-                                    <i class="fas fa-plus"></i> Add New Product
-                                </a>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-center">
-                                    <div class="fw-bold text-warning"><?php echo formatPrice($sales_stats['pending_earnings'] ?? 0); ?></div>
-                                    <small class="text-muted">Pending Earnings</small>
+            <div class="card">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-box me-2"></i>My Products</h5>
+                <a href="add_product.php" class="btn btn-outline-gold btn-sm"><i class="fas fa-plus"></i> Add Product</a>
+              </div>
+              <div class="card-body">
+                <?php if (empty($products)): ?>
+                  <div class="text-center py-4">
+                    <i class="fas fa-box fa-3x text-muted mb-3"></i>
+                    <h5>No products yet</h5>
+                    <p class="text-muted">Start selling by adding your first product.</p>
+                    <a href="add_product.php" class="btn btn-primary">Add Product</a>
+                  </div>
+                <?php else: ?>
+                  <div class="table-responsive">
+                    <table class="table table-hover">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>Price</th>
+                          <th>Category</th>
+                          <th>Status</th>
+                          <th>Created</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php foreach ($products as $product): ?>
+                          <tr>
+                            <td>
+                              <div class="d-flex align-items-center">
+                                <?php if ($product['image']): ?>
+                                  <img src="assets/img/<?php echo htmlspecialchars($product['image']); ?>" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover;">
+                                <?php else: ?>
+                                  <div class="bg-light rounded me-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                    <i class="fas fa-image text-muted"></i>
+                                  </div>
+                                <?php endif; ?>
+                                <div>
+                                  <div class="fw-bold"><?php echo htmlspecialchars($product['title']); ?></div>
+                                  <small class="text-muted"><?php echo htmlspecialchars(substr($product['description'], 0, 50)) . '...'; ?></small>
                                 </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-center">
-                                    <div class="fw-bold text-warning"><?php echo $seller_stats['pending_products']; ?></div>
-                                    <small class="text-muted">Pending Approval</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                              </div>
+                            </td>
+                            <td><?php echo formatPrice($product['price']); ?></td>
+                            <td><?php echo htmlspecialchars($product['category'] ?? 'N/A'); ?></td>
+                            <td>
+                              <span class="badge bg-<?php echo $product['status'] === 'pending' ? 'warning' : ($product['status'] === 'approved' ? 'success' : 'danger'); ?>"><?php echo ucfirst($product['status']); ?></span>
+                            </td>
+                            <td><?php echo date('M j, Y', strtotime($product['created_at'])); ?></td>
+                            <td>
+                              <div class="btn-group btn-group-sm">
+                                <a href="product_details.php?id=<?php echo $product['id']; ?>" class="btn btn-ghost" title="View"><i class="fas fa-eye"></i></a>
+                                <a href="edit_product.php?id=<?php echo $product['id']; ?>" class="btn btn-secondary" title="Edit"><i class="fas fa-edit"></i></a>
+                                <a href="delete_product.php?id=<?php echo $product['id']; ?>" class="btn btn-outline-danger delete-btn" data-action="delete this product" title="Delete"><i class="fas fa-trash"></i></a>
+                              </div>
+                            </td>
+                          </tr>
+                        <?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                <?php endif; ?>
+              </div>
             </div>
-        </div>
+          </div>
 
-        <!-- My Products -->
-        <div class="row">
-            <div class="col-12">
-                <!-- Negotiations Inbox -->
-                <div class="card mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="fas fa-comments"></i> Negotiations</h5>
+          <!-- Right: Stats + Quick Actions -->
+          <div class="col-lg-4">
+            <div class="card dashboard-card text-center mb-4">
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-6">
+                    <div>
+                      <div class="text-muted">Products</div>
+                      <div class="fs-5 fw-bold"><?php echo $seller_stats['total_products']; ?></div>
                     </div>
-                    <div class="card-body">
-                        <?php if (empty($negotiations)): ?>
-                            <div class="text-center py-4">
-                                <i class="fas fa-comments fa-3x text-muted mb-3"></i>
-                                <h5>No active negotiations yet</h5>
-                                <p class="text-muted mb-0">When buyers initiate chats on your product pages, they will appear here.</p>
-                            </div>
-                        <?php else: ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover align-middle">
-                                    <thead>
-                                        <tr>
-                                            <th>Product</th>
-                                            <th>Buyer</th>
-                                            <th>Last Message</th>
-                                            <th>Updated</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($negotiations as $neg): ?>
-                                            <tr>
-                                                <td><?php echo htmlspecialchars($neg['product_title']); ?></td>
-                                                <td><?php echo htmlspecialchars($neg['buyer_name']); ?></td>
-                                                <td class="text-truncate" style="max-width: 320px;">
-                                                    <?php echo htmlspecialchars($neg['last_message'] ?? ''); ?>
-                                                </td>
-                                                <td>
-                                                    <small class="text-muted"><?php echo $neg['last_time'] ? date('M j, Y H:i', strtotime($neg['last_time'])) : '-'; ?></small>
-                                                </td>
-                                                <td class="text-end">
-                                                    <button class="btn btn-sm btn-primary openChatBtn"
-                                                            data-role="seller"
-                                                            data-product-id="<?php echo (int)$neg['product_id']; ?>"
-                                                            data-seller-id="<?php echo (int)$user_id; ?>"
-                                                            data-buyer-id="<?php echo (int)$neg['buyer_id']; ?>">
-                                                        <i class="fas fa-comments"></i> Open Chat
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php endif; ?>
+                  </div>
+                  <div class="col-6">
+                    <div>
+                      <div class="text-muted">Approved</div>
+                      <div class="fs-5 fw-bold"><?php echo $seller_stats['approved_products']; ?></div>
                     </div>
+                  </div>
+                  <div class="col-6">
+                    <div>
+                      <div class="text-muted">Sales</div>
+                      <div class="fs-5 fw-bold"><?php echo $sales_stats['total_sales']; ?></div>
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <div>
+                      <div class="text-muted">Released</div>
+                      <div class="fw-bold"><?php echo formatPrice($sales_stats['released_earnings'] ?? 0); ?></div>
+                    </div>
+                  </div>
                 </div>
-
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5><i class="fas fa-box"></i> My Products</h5>
-                        <a href="add_product.php" class="btn btn-primary btn-sm">
-                            <i class="fas fa-plus"></i> Add Product
-                        </a>
-                    </div>
-                    <div class="card-body">
-                        <?php if (empty($products)): ?>
-                            <div class="text-center py-4">
-                                <i class="fas fa-box fa-3x text-muted mb-3"></i>
-                                <h5>No products yet</h5>
-                                <p class="text-muted">Start selling by adding your first product.</p>
-                                <a href="add_product.php" class="btn btn-primary">Add Product</a>
-                            </div>
-                        <?php else: ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Product</th>
-                                            <th>Price</th>
-                                            <th>Category</th>
-                                            <th>Status</th>
-                                            <th>Created</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($products as $product): ?>
-                                            <tr>
-                                                <td>
-                                                    <div class="d-flex align-items-center">
-                                                        <?php if ($product['image']): ?>
-                                                            <img src="assets/img/<?php echo htmlspecialchars($product['image']); ?>" 
-                                                                 class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover;">
-                                                        <?php else: ?>
-                                                            <div class="bg-light rounded me-2 d-flex align-items-center justify-content-center" 
-                                                                 style="width: 40px; height: 40px;">
-                                                                <i class="fas fa-image text-muted"></i>
-                                                            </div>
-                                                        <?php endif; ?>
-                                                        <div>
-                                                            <div class="fw-bold"><?php echo htmlspecialchars($product['title']); ?></div>
-                                                            <small class="text-muted"><?php echo htmlspecialchars(substr($product['description'], 0, 50)) . '...'; ?></small>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td><?php echo formatPrice($product['price']); ?></td>
-                                                <td><?php echo htmlspecialchars($product['category'] ?? 'N/A'); ?></td>
-                                                <td>
-                                                    <span class="badge bg-<?php 
-                                                        echo $product['status'] === 'pending' ? 'warning' : 
-                                                            ($product['status'] === 'approved' ? 'success' : 'danger'); 
-                                                    ?>">
-                                                        <?php echo ucfirst($product['status']); ?>
-                                                    </span>
-                                                </td>
-                                                <td><?php echo date('M j, Y', strtotime($product['created_at'])); ?></td>
-                                                <td>
-                                                    <div class="btn-group btn-group-sm">
-                                                        <a href="product_details.php?id=<?php echo $product['id']; ?>" 
-                                                           class="btn btn-outline-primary" title="View">
-                                                            <i class="fas fa-eye"></i>
-                                                        </a>
-                                                        <a href="edit_product.php?id=<?php echo $product['id']; ?>" 
-                                                           class="btn btn-outline-warning" title="Edit">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                        <a href="delete_product.php?id=<?php echo $product['id']; ?>" 
-                                                           class="btn btn-outline-danger delete-btn" 
-                                                           data-action="delete this product" title="Delete">
-                                                            <i class="fas fa-trash"></i>
-                                                        </a>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
+              </div>
             </div>
+
+            <div class="card">
+              <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
+                <div class="d-grid gap-2">
+                  <a href="add_product.php" class="btn btn-primary"><i class="fas fa-plus"></i> Add New Product</a>
+                  <button class="btn btn-secondary" disabled><i class="fas fa-wallet"></i> Pending Earnings: <?php echo formatPrice($sales_stats['pending_earnings'] ?? 0); ?></button>
+                  <button class="btn btn-ghost" disabled><i class="fas fa-clock"></i> Pending Approval: <?php echo (int)$seller_stats['pending_products']; ?></button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
     <?php else: ?>
         <!-- Admin role should have been redirected server-side above -->
     <?php endif; ?>
 </div>
-
-<?php include 'includes/footer.php'; ?>
 
 <!-- Chat Modal on Dashboard (Seller/Buyer common) -->
 <div class="modal fade chat-modal" id="chatModal" tabindex="-1" aria-hidden="true">
@@ -482,3 +458,6 @@ include 'includes/header.php';
     </div>
   </div>
 </div>
+
+<?php include 'includes/footer.php'; ?>
+

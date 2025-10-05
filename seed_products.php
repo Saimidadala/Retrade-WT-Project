@@ -32,6 +32,7 @@ $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $count = max(1, min(200, (int)($_POST['count'] ?? 50)));
     $status = $_POST['status'] ?? 'approved'; // approved | pending | mixed
+    $useImages = true; // always try to use images if available
 
     try {
         $pdo->beginTransaction();
@@ -46,23 +47,106 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $sellerId = getDemoSellerId($pdo);
 
+        // Helpers: ensure category exists and guess category from title
+        $ensureCategory = function(PDO $pdo, string $name): string {
+            $name = trim($name);
+            if ($name === '') return $name;
+            $st = $pdo->prepare('SELECT name FROM categories WHERE name = ?');
+            $st->execute([$name]);
+            if ($st->fetchColumn()) return $name;
+            $ins = $pdo->prepare('INSERT INTO categories (name) VALUES (?)');
+            $ins->execute([$name]);
+            return $name;
+        };
+        $guessCategory = function(string $title): ?string {
+            $t = strtolower($title);
+            $map = [
+                'Smartphones' => ['smartphone','phone','iphone','galaxy','redmi','oneplus','realme','vivo','oppo','pixel','motorola','iqoo','infinix','tecno'],
+                'Laptops' => ['laptop','macbook','ideapad','inspiron','vivobook','tuf','thinkpad','aspire','victus','omen','pavilion'],
+                'Headphones & Earbuds' => ['headphone','earbud','earphone','airdopes','buds','wh-','xm4','xm5'],
+                'Wearables' => ['smartwatch','watch','colorfit','ninja'],
+                'Speakers' => ['speaker','soundbar','flip 5','flip 6'],
+                'Cameras' => ['camera','dslr','eos','nikon','alpha','a6000','lens'],
+                'Home & Kitchen' => ['mixer','grinder','pressure cooker','air fryer','water purifier','purifier','induction cooktop'],
+                'Networking' => ['router','wi-fi','wifi','archer'],
+                'Accessories' => ['power bank','charger','cable','adapter','pendrive','sd card','memory card'],
+                'Bags' => ['backpack','bagpack','bag']
+            ];
+            foreach ($map as $cat => $keywords) {
+                foreach ($keywords as $kw) {
+                    if (strpos($t, $kw) !== false) return $cat;
+                }
+            }
+            return null;
+        };
+
         // Title fragments
         $brands = ['Acme','Nova','Zenith','Pulse','Vertex','Nimbus','Orion','Quantum','Aero','Vivid'];
         $items  = ['Headphones','Smartwatch','Backpack','Coffee Maker','LED Monitor','Wireless Mouse','Keyboard','Running Shoes','Bluetooth Speaker','DSLR Lens','Air Purifier','Gaming Chair','Portable SSD','Action Camera','E-book Reader'];
         $adjs   = ['Pro','Max','Lite','Ultra','Plus','Mini','X','S','Prime','Edge'];
 
-        $insert = $pdo->prepare("INSERT INTO products (seller_id, title, description, price, image, category, status) VALUES (?,?,?,?,?,?,?)");
+        $insert = $pdo->prepare("INSERT INTO products (seller_id, title, description, price, image, category, status, condition_grade, condition_notes, defect_photos) VALUES (?,?,?,?,?,?,?,?,?,?)");
+
+        // Seed images pool (place sample images in assets/img/seed/)
+        $seedDir = __DIR__ . '/assets/img/seed';
+        $imagePool = [];
+        if (is_dir($seedDir)) {
+            foreach (scandir($seedDir) as $f) {
+                if (preg_match('/\.(jpe?g|png|gif|webp)$/i', $f)) { $imagePool[] = $f; }
+            }
+        }
+
+        // Enforce that seeding uses real images only
+        if (empty($imagePool)) {
+            throw new RuntimeException("No seed images found in assets/img/seed/. Run scripts/fetch_real_images.php?profile=india&categories=electronics,laptop,smartphone&per_cat=12&pages=1&force=1 first.");
+        }
 
         for ($i=0; $i<$count; $i++) {
             $title = $brands[array_rand($brands)] . ' ' . $items[array_rand($items)] . ' ' . $adjs[array_rand($adjs)];
-            $cat   = $cats[array_rand($cats)];
+            // Guess category from title; if none, fall back to random existing
+            $g = $guessCategory($title);
+            if ($g) {
+                $cat = $ensureCategory($pdo, $g);
+            } else {
+                $cat = $cats[array_rand($cats)];
+            }
             $price = rand(900, 95000) + (rand(0,99)/100);
-            $desc  = "Brand new/like new $title with warranty. Lorem ipsum dolor sit amet, consectetur adipiscing elit. ";
-            $img   = null; // Optional: place filenames if you upload images to assets/img
+            $desc  = "Pre-owned $title. Fully functional. Minor cosmetic wear consistent with age.";
+
+            // Condition seeding (weighted)
+            $grades = ['Poor','Fair','Good','Excellent','Like New','New'];
+            $weights = [5, 15, 40, 25, 12, 3]; // sums to 100
+            $r = rand(1,100); $acc=0; $cond='Good';
+            for ($g=0;$g<count($grades);$g++){ $acc+=$weights[$g]; if ($r <= $acc){ $cond=$grades[$g]; break; } }
+            $notes = in_array($cond, ['Poor','Fair']) ? 'Visible wear and tear; tested working. See photos for scratches/dents.' : 'Well maintained; 100% functional.';
+
+            // Main image + optional defect photos
+            $img = null; $defect = [];
+            if ($useImages && !empty($imagePool)) {
+                $pick = $imagePool[array_rand($imagePool)];
+                $ext  = pathinfo($pick, PATHINFO_EXTENSION);
+                $destName = 'product_' . uniqid() . '.' . $ext;
+                $destPath = __DIR__ . '/assets/img/' . $destName;
+                if (!copy($seedDir . '/' . $pick, $destPath)) { $destName = null; }
+                $img = $destName;
+
+                // up to 2 defect photos (can repeat pool)
+                $addCount = rand(0,2);
+                for ($d=0; $d<$addCount; $d++) {
+                    $p2 = $imagePool[array_rand($imagePool)];
+                    $ext2 = pathinfo($p2, PATHINFO_EXTENSION);
+                    $defName = 'defect_' . uniqid() . '.' . $ext2;
+                    $defPath = __DIR__ . '/assets/img/defects/' . $defName;
+                    if (!is_dir(__DIR__ . '/assets/img/defects')) mkdir(__DIR__ . '/assets/img/defects', 0755, true);
+                    if (copy($seedDir . '/' . $p2, $defPath)) {
+                        $defect[] = 'defects/' . $defName; // stored relative to assets/img
+                    }
+                }
+            }
 
             $st = $status === 'mixed' ? (rand(0, 100) < 70 ? 'approved' : (rand(0,1) ? 'pending' : 'rejected')) : $status;
 
-            $insert->execute([$sellerId, $title, $desc, $price, $img, $cat, $st]);
+            $insert->execute([$sellerId, $title, $desc, $price, $img, $cat, $st, $cond, $notes, empty($defect) ? null : implode(',', $defect)]);
         }
 
         $pdo->commit();
@@ -93,7 +177,7 @@ include __DIR__ . '/includes/header.php';
           <form method="post" class="row g-3">
             <div class="col-md-6">
               <label for="count" class="form-label">Number of products</label>
-              <input type="number" min="1" max="200" class="form-control" id="count" name="count" value="60" required>
+              <input type="number" min="1" max="200" class="form-control" id="count" name="count" value="100" required>
             </div>
             <div class="col-md-6">
               <label for="status" class="form-label">Default status</label>
@@ -102,6 +186,9 @@ include __DIR__ . '/includes/header.php';
                 <option value="pending">Pending</option>
                 <option value="mixed" selected>Mixed</option>
               </select>
+            </div>
+            <div class="col-12 small text-muted">
+              If you place any sample images in <code>assets/img/seed/</code>, the seeder will copy them into <code>assets/img/</code> and attach them to products.
             </div>
             <div class="col-12 d-flex justify-content-between">
               <a href="index.php" class="btn btn-secondary"><i class="fas fa-arrow-left me-1"></i>Back</a>

@@ -13,10 +13,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-    <link rel="stylesheet" href="assets/css/chat.css">
+    <!-- Custom CSS with cache-busting -->
+    <?php
+        $styleV = @filemtime(__DIR__ . '/../assets/css/style.css') ?: time();
+        $adminV = @filemtime(__DIR__ . '/../assets/css/admin.css') ?: time();
+        $chatV  = @filemtime(__DIR__ . '/../assets/css/chat.css') ?: time();
+    ?>
+    <link rel="stylesheet" href="assets/css/style.css?v=<?php echo $styleV; ?>">
+    <link rel="stylesheet" href="assets/css/admin.css?v=<?php echo $adminV; ?>">
+    <link rel="stylesheet" href="assets/css/chat.css?v=<?php echo $chatV; ?>">
 </head>
 <body>
     <div class="layout">
@@ -30,12 +35,70 @@
                     <div class="title"><?php echo htmlspecialchars($page_title ?? ''); ?></div>
                 </div>
                 <div class="actions">
-                    <a href="#" class="icon-btn" title="Notifications"><i class="far fa-bell"></i></a>
-                    <a href="#" class="icon-btn" title="Messages"><i class="far fa-envelope"></i></a>
+                    <?php if (isLoggedIn() && getUserRole()==='buyer'): ?>
+                        <?php
+                          // compute light-weight counts
+                          try {
+                            $wc = (int)($pdo->query("SELECT COUNT(*) FROM wishlist WHERE buyer_id=".(int)($_SESSION['user_id']??0))->fetchColumn() ?: 0);
+                          } catch (Throwable $e) { $wc = 0; }
+                          try {
+                            $cc = (int)($pdo->query("SELECT COUNT(*) FROM cart WHERE buyer_id=".(int)($_SESSION['user_id']??0))->fetchColumn() ?: 0);
+                          } catch (Throwable $e) { $cc = 0; }
+                        ?>
+                        <a href="wishlist.php" class="icon-btn position-relative" title="Wishlist" aria-label="Open wishlist">
+                            <i class="fas fa-heart"></i>
+                            <?php if ($wc>0): ?><span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?php echo $wc; ?></span><?php endif; ?>
+                        </a>
+                        <a href="cart.php" class="icon-btn position-relative" title="Cart" aria-label="Open cart">
+                            <i class="fas fa-shopping-cart"></i>
+                            <?php if ($cc>0): ?><span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark"><?php echo $cc; ?></span><?php endif; ?>
+                        </a>
+                    <?php endif; ?>
+                    <div class="dropdown me-2">
+                        <a href="#" class="icon-btn position-relative" id="notifDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications" aria-label="Open notifications">
+                            <i class="far fa-bell"></i>
+                            <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="display:none">0</span>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-end p-0" aria-labelledby="notifDropdown" style="min-width: 360px;">
+                            <div class="p-2 d-flex justify-content-between align-items-center border-bottom">
+                                <strong>Notifications</strong>
+                                <button class="btn btn-sm btn-outline-secondary" id="notifMarkAll">Mark all as read</button>
+                            </div>
+                            <div id="notifList" style="max-height: 360px; overflow:auto;">
+                                <div class="p-3 text-muted small">Loading…</div>
+                            </div>
+                            <div class="p-2 border-top text-center small text-muted">Latest updates appear here</div>
+                        </div>
+                    </div>
+                    <div class="dropdown me-2">
+                        <a href="#" class="icon-btn position-relative" id="messagesDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="Messages" aria-label="Open messages">
+                            <i class="far fa-envelope"></i>
+                            <span id="messagesBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="display:none">0</span>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-end p-0" aria-labelledby="messagesDropdown" style="min-width: 380px;">
+                            <div class="p-2 d-flex justify-content-between align-items-center border-bottom">
+                                <div class="d-flex align-items-center gap-2">
+                                  <strong>Messages</strong>
+                                  <div class="form-check form-switch m-0 small">
+                                    <input class="form-check-input" type="checkbox" id="messagesOnlyUnread">
+                                    <label class="form-check-label" for="messagesOnlyUnread">Unread only</label>
+                                  </div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <a href="inbox.php" class="btn btn-sm btn-ghost" aria-label="Go to inbox">Go to Inbox</a>
+                                    <button class="btn btn-sm btn-outline-secondary" id="openInboxBtn">Open Inbox</button>
+                                </div>
+                            </div>
+                            <div id="messagesList" style="max-height: 380px; overflow:auto;">
+                                <div class="p-3 text-muted small">Loading…</div>
+                            </div>
+                            <div class="p-2 border-top text-center small text-muted">Your recent chats</div>
+                        </div>
+                    </div>
                     <?php if (isset($_SESSION['user_name'])): ?>
                         <span class="d-none d-md-inline text-white-50 me-1"><?php echo htmlspecialchars($_SESSION['user_name']); ?></span>
                     <?php endif; ?>
-                    <img src="https://ui-avatars.com/api/?name=<?php echo urlencode($_SESSION['user_name'] ?? 'User'); ?>&background=3f51b5&color=fff" alt="avatar" class="avatar">
+                    <img id="profileAvatarBtn" src="https://ui-avatars.com/api/?name=<?php echo urlencode($_SESSION['user_name'] ?? 'User'); ?>&background=3f51b5&color=fff" alt="avatar" class="avatar" style="cursor:pointer" title="View Profile">
                 </div>
             </header>
             <main class="content">

@@ -7,13 +7,23 @@
                             </div>
                             <div class="col-md-6 text-md-end">
                                 <p class="mb-0">&copy; <?php echo date('Y'); ?> Retrade. All rights reserved.</p>
-                                <small class="text-muted">Secure transactions with escrow protection</small>
-                            </div>
-                        </div>
-                    </div>
                 </footer>
             </main>
         </div>
+    
+    <!-- Global Profile Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="profileModalLabel">Profile</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="profileContent"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Bootstrap JS -->

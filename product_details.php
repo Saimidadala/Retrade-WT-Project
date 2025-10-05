@@ -78,7 +78,8 @@ include 'includes/header.php';
         <div class="chat-header-title">
           <span class="presence-dot" id="chatPresence"></span>
           <strong>Negotiation Chat</strong>
-          <small class="text-muted ms-2">for: <?php echo htmlspecialchars($product['title']); ?></small>
+          <small class="text-muted ms-2" id="chatPresenceText">Offline</small>
+          <small class="text-muted ms-2"> <span id="chatProductTitle">for: <?php echo htmlspecialchars($product['title']); ?></span></small>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
@@ -88,6 +89,8 @@ include 'includes/header.php';
       </div>
       <div class="modal-footer">
         <div class="input-group">
+          <button class="btn btn-outline-secondary" id="attachBtn" type="button" title="Attach file"><i class="fas fa-paperclip"></i></button>
+          <input type="file" id="chatAttachment" class="d-none" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
           <textarea class="form-control chat-input" id="chatInput" rows="1" placeholder="Type your message… (Enter to send, Shift+Enter for newline)"></textarea>
           <button class="btn btn-send" id="sendMsgBtn"><i class="fas fa-paper-plane"></i></button>
         </div>
@@ -105,126 +108,162 @@ include 'includes/header.php';
             <div class="card h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-3">
-                        <h2 class="me-2 mb-0"><?php echo htmlspecialchars($product['title']); ?></h2>
-                        <button id="copyProductLink" class="btn btn-outline-secondary btn-sm"><i class="fas fa-link"></i> Copy Link</button>
-                        <span class="badge bg-<?php 
-                            echo $product['status'] === 'pending' ? 'warning' : 
-                                ($product['status'] === 'approved' ? 'success' : 'danger'); 
-                        ?> fs-6">
-                            <?php echo ucfirst($product['status']); ?>
-                        </span>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <h3 class="text-success"><?php echo formatPrice($product['price']); ?></h3>
-                    </div>
-                    
-                    <?php if ($product['category']): ?>
-                        <div class="mb-3">
-                            <span class="badge bg-primary">
-                                <i class="fas fa-tag"></i> <?php echo htmlspecialchars($product['category']); ?>
-                            </span>
+                        <div>
+                            <h2 class="me-2 mb-1"><?php echo htmlspecialchars($product['title']); ?></h2>
+                            <div class="small text-muted"><i class="fas fa-calendar"></i> Listed on <?php echo date('F j, Y', strtotime($product['created_at'])); ?></div>
                         </div>
-                    <?php endif; ?>
-                    
+                        <div class="text-end">
+                            <button id="copyProductLink" class="btn btn-ghost btn-sm"><i class="fas fa-link"></i> Copy Link</button>
+                            <div>
+                                <span class="badge bg-<?php echo $product['status'] === 'pending' ? 'warning' : ($product['status'] === 'approved' ? 'success' : 'danger'); ?> fs-6">
+                                    <?php echo ucfirst($product['status']); ?>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="text-muted">Price</div>
+                                    <div class="h3 mb-0 price-value text-nowrap"><?php echo formatPrice($product['price']); ?></div>
+                                </div>
+                                <?php if ($product['category']): ?>
+                                <span class="badge bg-primary"><i class="fas fa-tag"></i> <?php echo htmlspecialchars($product['category']); ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <h5>Description</h5>
-                        <p class="text-muted"><?php echo nl2br(htmlspecialchars($product['description'])); ?></p>
+                        <p class="text-muted mb-0"><?php echo nl2br(htmlspecialchars($product['description'])); ?></p>
                     </div>
-                    
+
+                    <?php 
+                      $defectPhotos = [];
+                      if (!empty($product['defect_photos'])) {
+                        $defectPhotos = array_values(array_filter(array_map('trim', explode(',', $product['defect_photos']))));
+                      }
+                    ?>
+
                     <div class="mb-4">
-                        <h5>Seller Information</h5>
-                        <div class="card bg-light">
+                        <h5>Condition</h5>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div>
+                                        <span class="badge bg-secondary me-2">Grade</span>
+                                        <strong><?php echo htmlspecialchars($product['condition_grade'] ?? 'Good'); ?></strong>
+                                    </div>
+                                </div>
+                                <?php if (!empty($product['condition_notes'])): ?>
+                                    <p class="mb-2"><?php echo nl2br(htmlspecialchars($product['condition_notes'])); ?></p>
+                                <?php else: ?>
+                                    <p class="text-muted mb-2">No additional notes provided.</p>
+                                <?php endif; ?>
+
+                                <?php if (!empty($defectPhotos)): ?>
+                                    <div class="mt-3">
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <?php foreach ($defectPhotos as $dp): 
+                                                $src = 'assets/img/' . $dp;
+                                                if (!file_exists($src)) continue; ?>
+                                                <a href="<?php echo htmlspecialchars($src); ?>" target="_blank" rel="noopener">
+                                                    <img src="<?php echo htmlspecialchars($src); ?>" alt="Defect photo" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--og-border)">
+                                                </a>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h5>Seller</h5>
+                        <div class="card">
                             <div class="card-body py-2">
                                 <div class="d-flex align-items-center">
                                     <i class="fas fa-user-circle fa-2x text-primary me-3"></i>
                                     <div>
                                         <div class="fw-bold"><?php echo htmlspecialchars($product['seller_name']); ?></div>
-                                        <small class="text-muted">
-                                            <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($product['seller_email']); ?>
-                                        </small>
+                                        <small class="text-muted d-block"><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($product['seller_email']); ?></small>
                                         <?php if ($product['seller_phone']): ?>
-                                            <br><small class="text-muted">
-                                                <i class="fas fa-phone"></i> <?php echo htmlspecialchars($product['seller_phone']); ?>
-                                            </small>
+                                            <small class="text-muted d-block"><i class="fas fa-phone"></i> <?php echo htmlspecialchars($product['seller_phone']); ?></small>
                                         <?php endif; ?>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <small class="text-muted">
-                            <i class="fas fa-calendar"></i> Listed on <?php echo date('F j, Y', strtotime($product['created_at'])); ?>
-                        </small>
-                    </div>
-                    
-                    <!-- Action Buttons -->
-                    <div class="d-grid gap-2">
-                        <?php if ($can_buy && !$already_purchased): ?>
-                            <button id="openChatBtn" class="btn btn-primary" 
-                                    data-product-id="<?php echo (int)$product['id']; ?>"
-                                    data-seller-id="<?php echo (int)$product['seller_id']; ?>"
-                                    data-buyer-id="<?php echo (int)($_SESSION['user_id'] ?? 0); ?>"
-                                    data-user-name="<?php echo htmlspecialchars($_SESSION['user_name'] ?? ''); ?>">
-                                <i class="fas fa-comments"></i> Negotiate with Seller
-                            </button>
-                            <?php if (defined('RAZORPAY_ENABLED') && RAZORPAY_ENABLED): ?>
-                                <button id="rzpPayBtn" class="btn btn-success btn-lg">
-                                    <i class="fas fa-credit-card"></i> Pay with Razorpay - <?php echo formatPrice($product['price']); ?>
-                                </button>
-                                <small class="text-muted text-center">
-                                    <i class="fas fa-shield-alt"></i> Secure payment via Razorpay. Funds held until delivery.
-                                </small>
-                            <?php else: ?>
-                                <a href="buy_product.php?id=<?php echo $product['id']; ?>" class="btn btn-success btn-lg">
-                                    <i class="fas fa-shopping-cart"></i> Proceed to Buy - <?php echo formatPrice($product['price']); ?>
-                                </a>
-                                <small class="text-muted text-center"><i class="fas fa-shield-alt"></i> Escrow protection</small>
-                            <?php endif; ?>
-                        <?php elseif ($already_purchased): ?>
-                            <button class="btn btn-info btn-lg" disabled>
-                                <i class="fas fa-check-circle"></i> Already Purchased
-                            </button>
-                            <small class="text-muted text-center">
-                                You have already purchased this product
-                            </small>
-                        <?php elseif (isLoggedIn() && $_SESSION['user_id'] == $product['seller_id']): ?>
-                            <div class="row">
-                                <div class="col-6">
-                                    <a href="edit_product.php?id=<?php echo $product['id']; ?>" 
-                                       class="btn btn-warning w-100">
-                                        <i class="fas fa-edit"></i> Edit Product
-                                    </a>
-                                </div>
-                                <div class="col-6">
-                                    <a href="delete_product.php?id=<?php echo $product['id']; ?>" 
-                                       class="btn btn-danger w-100">
-                                        <i class="fas fa-trash"></i> Delete Product
-                                    </a>
-                                </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="mb-3"><i class="fas fa-bolt me-2"></i>Actions</h5>
+                            <div class="d-grid gap-2">
+                                <?php if ($can_buy && !$already_purchased): ?>
+                                    <button id="openChatBtn" class="btn btn-primary"
+                                            data-product-id="<?php echo (int)$product['id']; ?>"
+                                            data-seller-id="<?php echo (int)$product['seller_id']; ?>"
+                                            data-buyer-id="<?php echo (int)($_SESSION['user_id'] ?? 0); ?>"
+                                            data-user-name="<?php echo htmlspecialchars($_SESSION['user_name'] ?? ''); ?>">
+                                        <i class="fas fa-comments"></i> Negotiate with Seller
+                                    </button>
+                                    <?php if (defined('RAZORPAY_ENABLED') && RAZORPAY_ENABLED): ?>
+                                        <button id="rzpPayBtn" class="btn btn-success">
+                                            <i class="fas fa-credit-card"></i> Pay with Razorpay - <?php echo formatPrice($product['price']); ?>
+                                        </button>
+                                        <small class="text-muted text-center"><i class="fas fa-shield-alt"></i> Secure payment via Razorpay. Funds held until delivery.</small>
+                                    <?php else: ?>
+                                        <a href="buy_product.php?id=<?php echo $product['id']; ?>" class="btn btn-success">
+                                            <i class="fas fa-shopping-cart"></i> Proceed to Buy - <?php echo formatPrice($product['price']); ?>
+                                        </a>
+                                        <small class="text-muted text-center"><i class="fas fa-shield-alt"></i> Escrow protection</small>
+                                    <?php endif; ?>
+                                <?php elseif ($already_purchased): ?>
+                                    <button class="btn btn-info" disabled><i class="fas fa-check-circle"></i> Already Purchased</button>
+                                    <small class="text-muted text-center">You have already purchased this product</small>
+                                <?php elseif (isLoggedIn() && $_SESSION['user_id'] == $product['seller_id']): ?>
+                                    <div class="d-grid gap-2">
+                                        <a href="edit_product.php?id=<?php echo $product['id']; ?>" class="btn btn-secondary"><i class="fas fa-edit"></i> Edit Product</a>
+                                        <a href="delete_product.php?id=<?php echo $product['id']; ?>" class="btn btn-outline-danger"><i class="fas fa-trash"></i> Delete Product</a>
+                                    </div>
+                                <?php elseif (!isLoggedIn()): ?>
+                                    <a href="login.php" class="btn btn-primary"><i class="fas fa-sign-in-alt"></i> Login to Buy</a>
+                                <?php elseif (getUserRole() === 'seller'): ?>
+                                    <button class="btn btn-secondary" disabled><i class="fas fa-info-circle"></i> Sellers Cannot Buy</button>
+                                    <small class="text-muted text-center">Switch to a buyer account to purchase products</small>
+                                <?php elseif ($product['status'] !== 'approved'): ?>
+                                    <button class="btn btn-warning" disabled><i class="fas fa-clock"></i> Product Not Available</button>
+                                    <small class="text-muted text-center">This product is not currently available for purchase</small>
+                                <?php endif; ?>
                             </div>
-                        <?php elseif (!isLoggedIn()): ?>
-                            <a href="login.php" class="btn btn-primary btn-lg">
-                                <i class="fas fa-sign-in-alt"></i> Login to Buy
-                            </a>
-                        <?php elseif (getUserRole() === 'seller'): ?>
-                            <button class="btn btn-secondary btn-lg" disabled>
-                                <i class="fas fa-info-circle"></i> Sellers Cannot Buy
-                            </button>
-                            <small class="text-muted text-center">
-                                Switch to a buyer account to purchase products
-                            </small>
-                        <?php elseif ($product['status'] !== 'approved'): ?>
-                            <button class="btn btn-warning btn-lg" disabled>
-                                <i class="fas fa-clock"></i> Product Not Available
-                            </button>
-                            <small class="text-muted text-center">
-                                This product is not currently available for purchase
-                            </small>
-                        <?php endif; ?>
+                        </div>
                     </div>
+                </div>
+                <!-- Sticky bottom action bar (mobile-first) -->
+                <div class="sticky-buybar d-md-none mt-3">
+                  <div class="d-flex align-items-center justify-content-between p-3">
+                    <div>
+                      <div class="small text-muted">Price</div>
+                      <div class="price"><?php echo formatPrice($product['price']); ?></div>
+                    </div>
+                    <div class="d-flex gap-2">
+                      <?php if ($can_buy && !$already_purchased): ?>
+                        <button class="btn btn-outline-secondary wishlistBtn" data-product-id="<?php echo (int)$product['id']; ?>" aria-label="Add to wishlist"><i class="fas fa-heart"></i></button>
+                        <button id="openChatBtnSticky" class="btn btn-primary openChatBtn"
+                                data-product-id="<?php echo (int)$product['id']; ?>"
+                                data-seller-id="<?php echo (int)$product['seller_id']; ?>"
+                                data-buyer-id="<?php echo (int)($_SESSION['user_id'] ?? 0); ?>">
+                          <i class="fas fa-comments"></i> Chat
+                        </button>
+                      <?php else: ?>
+                        <a href="#" class="btn btn-secondary disabled">Unavailable</a>
+                      <?php endif; ?>
+                    </div>
+                  </div>
                 </div>
             </div>
         </div>
@@ -248,7 +287,7 @@ include 'includes/header.php';
     <!-- Escrow Information -->
     <div class="row mt-4">
         <div class="col-12">
-            <div class="card bg-light">
+            <div class="card">
                 <div class="card-body">
                     <h5><i class="fas fa-shield-alt text-success"></i> Escrow Protection</h5>
                     <div class="row">
@@ -281,6 +320,45 @@ include 'includes/header.php';
 </div>
 
 <?php include 'includes/footer.php'; ?>
+
+<!-- Lightbox Modal -->
+<div class="modal fade" id="pdLightbox" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-body p-0 bg-black">
+        <img id="pdLightboxImg" src="" class="w-100 lightbox-img" alt="preview">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const main = document.getElementById('pdMainImg');
+  const thumbs = document.querySelectorAll('.pd-thumb');
+  const lb = document.getElementById('pdLightbox');
+  const lbImg = document.getElementById('pdLightboxImg');
+  if (main && thumbs.length) {
+    thumbs.forEach(t=>{
+      t.addEventListener('click', ()=>{
+        const src = t.getAttribute('data-src');
+        if (!src) return;
+        main.src = src;
+        document.querySelectorAll('.pd-thumb.active').forEach(a=>a.classList.remove('active'));
+        t.classList.add('active');
+      });
+    });
+    // Open lightbox on main image click
+    main.style.cursor = 'zoom-in';
+    main.addEventListener('click', ()=>{
+      if (!lb || !lbImg) return;
+      lbImg.src = main.src;
+      const m = bootstrap.Modal.getOrCreateInstance(lb);
+      m.show();
+    });
+  }
+})();
+</script>
 
 <?php if ($can_buy && defined('RAZORPAY_ENABLED') && RAZORPAY_ENABLED): ?>
 <!-- Razorpay Checkout -->
